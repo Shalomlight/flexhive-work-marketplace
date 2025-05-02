@@ -157,16 +157,19 @@
 ;; Initialize user reputation if not exists
 (define-private (initialize-reputation (user principal))
   (match (map-get? user-reputation { user: user })
-    existing-data existing-data
-    (map-set user-reputation
-      { user: user }
-      {
-        completed-gigs: u0,
-        total-ratings: u0,
-        rating-sum: u0,
-        disputes-won: u0,
-        disputes-lost: u0
-      }
+    existing-data true ;; Already exists, return true
+    (begin ;; Does not exist, create it and return true
+      (map-set user-reputation
+        { user: user }
+        {
+          completed-gigs: u0,
+          total-ratings: u0,
+          rating-sum: u0,
+          disputes-won: u0,
+          disputes-lost: u0
+        }
+      )
+      true
     )
   )
 )
@@ -217,37 +220,39 @@
 
 ;; Update reputation after dispute resolution
 (define-private (update-reputation-after-dispute (winner principal) (loser principal))
-  ;; Update winner reputation
-  (let ((winner-reputation (default-to 
-                          { completed-gigs: u0, total-ratings: u0, rating-sum: u0, disputes-won: u0, disputes-lost: u0 } 
-                          (map-get? user-reputation { user: winner }))))
-    (map-set user-reputation
-      { user: winner }
-      {
-        completed-gigs: (get completed-gigs winner-reputation),
-        total-ratings: (get total-ratings winner-reputation),
-        rating-sum: (get rating-sum winner-reputation),
-        disputes-won: (+ (get disputes-won winner-reputation) u1),
-        disputes-lost: (get disputes-lost winner-reputation)
-      }
+  (begin ;; Wrap the body in a begin block
+    ;; Update winner reputation
+    (let ((winner-reputation (default-to 
+                            { completed-gigs: u0, total-ratings: u0, rating-sum: u0, disputes-won: u0, disputes-lost: u0 } 
+                            (map-get? user-reputation { user: winner }))))
+      (map-set user-reputation
+        { user: winner }
+        {
+          completed-gigs: (get completed-gigs winner-reputation),
+          total-ratings: (get total-ratings winner-reputation),
+          rating-sum: (get rating-sum winner-reputation),
+          disputes-won: (+ (get disputes-won winner-reputation) u1),
+          disputes-lost: (get disputes-lost winner-reputation)
+        }
+      )
     )
-  )
-  
-  ;; Update loser reputation
-  (let ((loser-reputation (default-to 
-                         { completed-gigs: u0, total-ratings: u0, rating-sum: u0, disputes-won: u0, disputes-lost: u0 } 
-                         (map-get? user-reputation { user: loser }))))
-    (map-set user-reputation
-      { user: loser }
-      {
-        completed-gigs: (get completed-gigs loser-reputation),
-        total-ratings: (get total-ratings loser-reputation),
-        rating-sum: (get rating-sum loser-reputation),
-        disputes-won: (get disputes-won loser-reputation),
-        disputes-lost: (+ (get disputes-lost loser-reputation) u1)
-      }
+    
+    ;; Update loser reputation
+    (let ((loser-reputation (default-to 
+                           { completed-gigs: u0, total-ratings: u0, rating-sum: u0, disputes-won: u0, disputes-lost: u0 } 
+                           (map-get? user-reputation { user: loser }))))
+      (map-set user-reputation
+        { user: loser }
+        {
+          completed-gigs: (get completed-gigs loser-reputation),
+          total-ratings: (get total-ratings loser-reputation),
+          rating-sum: (get rating-sum loser-reputation),
+          disputes-won: (get disputes-won loser-reputation),
+          disputes-lost: (+ (get disputes-lost loser-reputation) u1)
+        }
+      )
     )
-  )
+  ) ;; End begin block
 )
 
 ;; Create a new milestone
@@ -786,4 +791,30 @@
                     arbitrator: (some arbitrator),
                     resolution: (some resolution),
                     client-refund-amount: (some client-refund-amount),
-                    freelancer-payment-amount: (some freelancer
+                    freelancer-payment-amount: (some freelancer-payment-amount),
+                    dispute-time: (get dispute-time dispute-data),
+                    resolution-time: (get resolution-time dispute-data)
+                  }
+                )
+                
+                ;; Update reputations based on who gets more funds
+                (let ((client (get client gig-data))
+                      (freelancer (unwrap-panic (get selected-freelancer gig-data))))
+                  (if (> freelancer-payment-amount client-refund-amount)
+                    (update-reputation-after-dispute freelancer client)
+                    (update-reputation-after-dispute client freelancer)
+                  )
+                )
+                
+                (ok true)
+              )
+              ERR-GIG-NOT-FOUND
+            )
+          )
+          ERR-DISPUTE-NOT-FOUND
+        )
+      )
+      ERR-GIG-NOT-FOUND
+    )
+  )
+)
